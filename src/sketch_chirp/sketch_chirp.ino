@@ -2,7 +2,7 @@
 
     Example code using ESP32 with SPH0645 microphone and UDA1334 audio output
 
-    @file esp32.ino
+    @file is modified from esp32.ino
 
     @brief Create a developer account at https://developers.chirp.io,
     and copy and paste your key, secret and config string for the "arduino"
@@ -22,22 +22,28 @@
 #include <driver/i2s.h>
 
 #include "chirp_connect.h"
-#include "Credentials.h"
+//#include "credentials.h"
 
 #define I2SI_DATA         12     // I2S DATA IN on GPIO32
 #define I2SI_BCK          14     // I2S BCLK on GPIO14
 #define I2SI_LRCL         15     // I2S SELECT on GPIO15
 
-#define I2SO_DATA         25 //22     // I2S DATA OUT on GPIO23
-#define I2SO_BCK          27 //26     // I2S BCLK on GPIO18
-#define I2SO_WSEL         26 //25      // I2S SELECT on GPIO5
+#define I2SO_DATA         25     // I2S DATA OUT on GPIO23
+#define I2SO_BCK          27     // I2S BCLK on GPIO18
+#define I2SO_WSEL         26      // I2S SELECT on GPIO5
 
 #define LED_PIN           2      // LED
 #define SWITCH_PIN        0      // Switch
 
 #define BUFFER_SIZE       512
 #define MIC_CALIBRATION   13125
-#define SAMPLE_RATE       44100
+#define SAMPLE_RATE       16000
+
+// 16kHz mono
+#define APP_KEY     "BE9CcAc0F91dD3E5F546f7254"
+#define APP_SECRET  "2bCC2406b7A506bd55c4bfCEFA475d1ADa41fBdFcCfB6BaccB"
+#define APP_CONFIG  "Hx2Lrc+uTV/d26sRHUyRUb1QpwDpgtBSarQWksCKz41sMCI3UXJLuiOwojj13ISafsu+CF4uak1DcFiaJGK/OBn/5l/6X2CY8F7aK0t5tnyfBbbVdu2dS0I+E5Nrq81uc/Ls0yGJFHROJGOjAEusp24SsZWO61pHuPaxf5cTIdwDohi5QMOPl/A6eqG9hXzaHdMDjKZK5f6Dvq6RUR1gFfSO55gn0JWeO9+Q2hpAMVEPvrkfPWoKCTM3B5w+dL1Cli1UtO7aVCehXHen1XjuNbMV7v2OfKbLOiva6+MJNpiUIbMulOQQvTsRoGD9qiwyMzlFHkHVOsgbsj8KU974Nx7ApcHyPjHhmANVBx+KZ6cz39WuTtLdnrixyRBAjjKdj7AiaZy2YizPjAgatcwlEfxVBER4cUASs+aeMiLODpg5hWSv7s5ExXTIYnhxtFVy5MNFCV4JrNSJZTNqpkQPftKykAsecPNsvYkq2BF9XLkVvode6KWdGa6VY1fQ5WBzbNxWsZ9uer6AB2/0VuyZNL5y4pe0/T7YRPwQwntYDKLqnsYqkj+P+CNjegUgXVOq/CH2SSesfClFdWgAASARRodGj8fvIL/fPMSNJjkNErnZidI4AdO7Trn32hH8gIRjEd2YhXFYr4C1fszrNiMX12qnrsdCGeGe6AQYZGK2TLOX2DHVmzaWyLFYKNEb9QatqmeUK85tilaQdcDHray24sgtqZhr0hVRKIwSTg3gLIR/JOl+uwJ5g0GBRKTkCIStOSbBRXvQwVsIuSWKhvTkYeel1ZS6uj+hqKD4MvZXEvDuKJXvnXYO792aA4jJgYTwBOziL9Lrhd5WhdVhQOlLjIYQ3z6zZbozfK4KRL17jtU="
+
 
 /**
    Convert I2S input data.
@@ -53,14 +59,14 @@ static chirp_connect_state_t currentState = CHIRP_CONNECT_STATE_NOT_CREATED;
 static volatile bool buttonPressed = false;
 static bool startTasks = false;
 
-// Function definitions ---------------------------------------
+// Function declarations --------------------------------------
 void IRAM_ATTR handleInterrupt();
 void setupChirp();
 void chirpErrorHandler(chirp_connect_error_code_t code);
 void setupAudioInput(int sample_rate);
 void setupAudioOutput(int sample_rate);
 
-// Function declarations --------------------------------------
+// Function definitions ---------------------------------------
 void
 onStateChangedCallback(void *connect, chirp_connect_state_t previous, chirp_connect_state_t current)
 {
@@ -97,10 +103,9 @@ initTask(void *parameter)
 
   uint32_t output_sample_rate = chirp_connect_set_output_sample_rate(connect, SAMPLE_RATE);
   setupAudioOutput(SAMPLE_RATE);
-  Serial.println("88888888888888888888888888888888888888888888");
-  Serial.println(SAMPLE_RATE);
+
   uint32_t input_sample_rate = chirp_connect_set_input_sample_rate(connect, SAMPLE_RATE);
-  //setupAudioInput(SAMPLE_RATE);
+  setupAudioInput(SAMPLE_RATE);
 
   Serial.printf("Heap size: %u\n", ESP.getFreeHeap());
   startTasks = true;
@@ -118,7 +123,7 @@ processInputTask(void *parameter)
   int32_t ibuffer[BUFFER_SIZE] = {0};
 
   while (currentState >= CHIRP_CONNECT_STATE_RUNNING) {
-    audioError = i2s_read(I2S_NUM_1, ibuffer, BUFFER_SIZE * 4, &bytesLength, portMAX_DELAY);
+    audioError = i2s_read(I2S_NUM_0, ibuffer, BUFFER_SIZE * 4, &bytesLength, portMAX_DELAY);
     if (bytesLength) {
       for (int i = 0; i < bytesLength / 4; i++) {
         buffer[i] = (float)CONVERT_INPUT(ibuffer[i]);
@@ -171,37 +176,39 @@ setup()
   Serial.printf("Heap size: %u\n", ESP.getFreeHeap());
 
   xTaskCreate(initTask, "initTask", 16384, NULL, 1, NULL);
+
+
 }
 
 void
 loop()
 {
-  static int sending_cnt=0;
   esp_err_t audioError;
   chirp_connect_error_code_t chirpError;
 
   if (startTasks) {
-   // xTaskCreate(processInputTask, "processInputTask", 16384, NULL, 5, NULL);
+ //   xTaskCreate(processInputTask, "processInputTask", 16384, NULL, 5, NULL);
     xTaskCreate(processOutputTask, "processOutputTask", 16384, NULL, 3, NULL);
     startTasks = false;
   }
 
   if (buttonPressed) {
-    esp_err_t err;
-    size_t payloadLength = 0;
-    uint8_t *payload = chirp_connect_random_payload(connect, &payloadLength);
+  //  size_t payloadLength = 0;
+  //  uint8_t *payload = chirp_connect_random_payload(connect, &payloadLength);
+    char identifier[32] = {0,2,4,0x09};  
+    uint8_t *payload = (uint8_t *)identifier; 
+    size_t payloadLength = sizeof(identifier) / sizeof(identifier[0]); 
+    chirp_connect_error_code_t rc = chirp_connect_send(connect, payload, payloadLength);
+    //chirp_connect_send(connect, payload, payloadLength);
+    Serial.println("Sending data:");
+    
+    if (rc != CHIRP_CONNECT_OK) {
+      const char *errstr = chirp_connect_error_code_to_string(rc);
+      Serial.println(errstr);
+      } 
 
-   // char identifier[5] = {'h','e','l','l','o'};  
-   // uint8_t *payload = (uint8_t *)identifier; 
-   // size_t payloadLength = sizeof(payload) / sizeof(payload[0]); 
+
     
-    
-    err = chirp_connect_send(connect, payload, payloadLength);
-    if (err != CHIRP_CONNECT_OK) {
-    //Serial.println("sent error");
-    }
-    //Serial.print("Sending data: ");
-    //Serial.println(++sending_cnt);
     buttonPressed = false;
   }
 }
@@ -217,13 +224,13 @@ IRAM_ATTR handleInterrupt()
 void
 setupChirp()
 {
-  connect = new_chirp_connect(CHIRP_APP_KEY, CHIRP_APP_SECRET);
+  connect = new_chirp_connect(APP_KEY, APP_SECRET);
   if (connect == NULL) {
     Serial.println("Chirp initialisation failed.");
     return;
   }
 
-  chirp_connect_error_code_t err = chirp_connect_set_config(connect, CHIRP_APP_CONFIG);
+  chirp_connect_error_code_t err = chirp_connect_set_config(connect, APP_CONFIG);
   if (err != CHIRP_CONNECT_OK)
     chirpErrorHandler(err);
 
@@ -247,9 +254,14 @@ setupChirp()
     chirpErrorHandler(err);
 
   // Set volume to 0.5 to not distort output
-  chirp_connect_set_volume(connect, 0.5);
+  chirp_connect_set_volume(connect, 0.25);
 
   Serial.println("Chirp Connect initialised.");
+
+  // Chirp application info
+  char *info = chirp_connect_get_info(connect);
+  Serial.println(info);
+  free(info);
 }
 
 void
@@ -296,19 +308,19 @@ setupAudioInput(int sample_rate)
     .data_in_num = I2SI_DATA
   };
 
-  err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, NULL);
+  err = i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
   if (err != ESP_OK) {
     Serial.printf("Failed installing driver: %d\n", err);
     while (true);
   }
 
-  err = i2s_set_pin(I2S_NUM_1, &pin_config);
+  err = i2s_set_pin(I2S_NUM_0, &pin_config);
   if (err != ESP_OK) {
     Serial.printf("Failed setting pin: %d\n", err);
     while (true);
   }
 
-  err = i2s_set_sample_rates(I2S_NUM_1, sample_rate);
+  err = i2s_set_sample_rates(I2S_NUM_0, sample_rate);
   if (err != ESP_OK) {
     Serial.printf("Failed to set sample rates: %d\n", err);
     while (true);
@@ -332,7 +344,7 @@ setupAudioOutput(int sample_rate)
     .sample_rate = sample_rate,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
     .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-    .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+    .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_LSB),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
     .dma_buf_len = 64,
