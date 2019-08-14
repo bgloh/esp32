@@ -187,7 +187,7 @@ loop()
   chirp_connect_error_code_t chirpError;
 
   if (startTasks) {
- //   xTaskCreate(processInputTask, "processInputTask", 16384, NULL, 5, NULL);
+    xTaskCreate(processInputTask, "processInputTask", 16384, NULL, 5, NULL);
     xTaskCreate(processOutputTask, "processOutputTask", 16384, NULL, 3, NULL);
     startTasks = false;
   }
